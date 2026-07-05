@@ -75,7 +75,7 @@ python fwt.py process -i C:\Videos -o E:\Videos_washed
 - 扫描目录下所有视频文件
 - 混淆文件头 → 追加随机字节 → 后缀改为 `.fwt`
 - 生成含截图+GIF的加密预览ZIP
-- `.torrent` 文件按目录结构原样复制
+- 其他文件（种子、压缩包等）按目录结构原样复制
 - 输出到指定目录或自动生成的 `输入目录_washed/`，保持目录结构
 
 ### 2. 预览（preview）

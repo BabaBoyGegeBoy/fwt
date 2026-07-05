@@ -183,8 +183,7 @@ def process_directory(input_dir: str, output_dir: str = None, gen_preview: bool 
     """
     批量处理目录：
     - 视频文件 → 处理为 .fwt 并生成预览 zip
-    - .torrent 文件 → 按目录结构原样复制
-    - 其他文件 → 跳过
+    - 其他文件 → 按目录结构原样复制
 
     返回统计信息。
     """
