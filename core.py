@@ -288,6 +288,159 @@ def restore_directory(input_dir: str) -> dict:
     return stats
 
 
+# ── Wash 模式（轻量洗码，仅追加 5B 随机数）──────────────
+
+WASH_SUFFIX = '_washed'       # wash 模式输出目录后缀
+WASH_PADDING = PADDING_LEN    # wash 模式追加字节数（复用常量）
+
+
+def wash_file(input_path: str, output_path: str) -> dict:
+    """
+    轻量洗码：仅复制文件并在末尾追加 5 字节随机数，改变 MD5。
+    文件保留原名，不做任何头部混淆或元数据标记。
+
+    返回: {'success': bool, 'orig_size': int, 'new_size': int, 'error': str|None}
+    """
+    orig_size = os.path.getsize(input_path)
+    try:
+        shutil.copy2(input_path, output_path)
+        with open(output_path, 'ab') as f:
+            f.write(os.urandom(WASH_PADDING))
+        new_size = os.path.getsize(output_path)
+        return {'success': True, 'orig_size': orig_size, 'new_size': new_size, 'error': None}
+    except Exception as e:
+        if os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+            except OSError:
+                pass
+        return {'success': False, 'orig_size': orig_size, 'new_size': 0, 'error': str(e)}
+
+
+def unwash_file(input_path: str, output_path: str) -> dict:
+    """
+    还原 wash 模式的文件：截掉末尾 5 字节。
+
+    返回: {'success': bool, 'orig_size': int, 'new_size': int, 'error': str|None}
+    """
+    file_size = os.path.getsize(input_path)
+    if file_size < WASH_PADDING:
+        return {'success': False, 'orig_size': file_size, 'new_size': 0, 'error': '文件太小，无法还原（不足 5 字节）'}
+
+    try:
+        with open(input_path, 'rb') as fin:
+            content = fin.read(file_size - WASH_PADDING)
+        with open(output_path, 'wb') as fout:
+            fout.write(content)
+        new_size = os.path.getsize(output_path)
+        return {'success': True, 'orig_size': file_size, 'new_size': new_size, 'error': None}
+    except Exception as e:
+        return {'success': False, 'orig_size': file_size, 'new_size': 0, 'error': str(e)}
+
+
+def process_directory_wash(input_dir: str, output_dir: str = None, extensions: set = None) -> dict:
+    """
+    Wash 模式批量处理：所有文件 → 追加 5B → 输出到 _washed 目录。
+
+    参数:
+        extensions: 限定处理的扩展名集合（如 {'.mp4', '.mkv'}），None 表示全部。
+    """
+    if output_dir is None:
+        abs_in = os.path.abspath(input_dir).rstrip(os.sep + '/')
+        parent = os.path.dirname(abs_in)
+        name = os.path.basename(abs_in)
+        output_dir = os.path.join(parent, name + WASH_SUFFIX)
+    else:
+        output_dir = os.path.abspath(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    stats = {
+        'washed': 0,
+        'failed': 0,
+        'errors': [],
+    }
+
+    print(f"\n[wash] 输入目录: {input_dir}")
+    print(f"[wash] 输出目录: {output_dir}\n")
+
+    for root, dirs, files in os.walk(input_dir):
+        rel = os.path.relpath(root, input_dir)
+        if rel == '.':
+            rel = ''
+
+        out_root = os.path.join(output_dir, rel)
+        os.makedirs(out_root, exist_ok=True)
+
+        for filename in files:
+            src_path = os.path.join(root, filename)
+            ext = os.path.splitext(filename)[1].lower()
+
+            if extensions and ext not in extensions:
+                continue
+
+            dst_path = os.path.join(out_root, filename)
+            print(f"[洗码] {src_path}")
+            result = wash_file(src_path, dst_path)
+
+            if result['success']:
+                stats['washed'] += 1
+                print(f"       → {filename} (+{WASH_PADDING}B)")
+            else:
+                stats['failed'] += 1
+                stats['errors'].append((src_path, result['error']))
+                print(f"       → 失败: {result['error']}")
+
+    return stats
+
+
+def restore_directory_wash(input_dir: str, output_dir: str = None) -> dict:
+    """
+    Wash 模式批量还原：截掉所有文件末尾 5B → 输出到 _restored 目录。
+    不会原地修改原始文件。
+    """
+    if output_dir is None:
+        abs_in = os.path.abspath(input_dir).rstrip(os.sep + '/')
+        parent = os.path.dirname(abs_in)
+        name = os.path.basename(abs_in)
+        output_dir = os.path.join(parent, name + '_restored')
+    else:
+        output_dir = os.path.abspath(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    stats = {
+        'restored': 0,
+        'failed':   0,
+        'errors':   [],
+    }
+
+    print(f"\n[unwash] 输入目录: {input_dir}")
+    print(f"[unwash] 输出目录: {output_dir}\n")
+
+    for root, dirs, files in os.walk(input_dir):
+        rel = os.path.relpath(root, input_dir)
+        if rel == '.':
+            rel = ''
+
+        out_root = os.path.join(output_dir, rel)
+        os.makedirs(out_root, exist_ok=True)
+
+        for filename in files:
+            src_path = os.path.join(root, filename)
+            dst_path = os.path.join(out_root, filename)
+            print(f"[还原] {src_path}")
+            result = unwash_file(src_path, dst_path)
+
+            if result['success']:
+                stats['restored'] += 1
+                print(f"       → {filename} (-{WASH_PADDING}B)")
+            else:
+                stats['failed'] += 1
+                stats['errors'].append((src_path, result['error']))
+                print(f"       → 失败: {result['error']}")
+
+    return stats
+
+
 def print_stats(stats: dict, mode: str):
     """统一打印统计信息。"""
     print("\n" + "=" * 60)
@@ -297,6 +450,12 @@ def print_stats(stats: dict, mode: str):
         print(f"预览生成: {stats['preview_generated']} 成功, {stats['preview_failed']} 失败")
         print(f"文件复制: {stats['files_copied']}")
     elif mode == 'restore':
+        print(f"还原成功: {stats['restored']}")
+        print(f"还原失败: {stats['failed']}")
+    elif mode == 'wash':
+        print(f"洗码成功: {stats['washed']}")
+        print(f"洗码失败: {stats['failed']}")
+    elif mode == 'unwash':
         print(f"还原成功: {stats['restored']}")
         print(f"还原失败: {stats['failed']}")
 

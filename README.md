@@ -6,6 +6,15 @@
 
 ## 设计思路
 
+FWT 提供两种处理模式：
+
+| 模式 | 命令 | 手段 | 目的 |
+|:--|------|------|------|
+| **obfuscate** (默认) | `process` | 文件头128B XOR + 尾5B洗码 + .fwt后缀 + 预览ZIP | 三层防护，完全隐藏视频特征 |
+| **wash** (轻量) | `process -m wash` | 仅追加 5 字节随机数 | 快速改变 MD5/SHA1，防哈希封禁 |
+
+### obfuscate 模式的三层防护
+
 | 防护层 | 手段 | 目的 |
 |:--|------|------|
 | **MD5 洗码** | 文件末尾追加 5 字节随机数 | 改变文件哈希，防止 MD5/SHA1 封禁 |
@@ -57,6 +66,8 @@ pip install pyzipper
 
 ### 1. 处理（process）
 
+**obfuscate 模式（默认）：**
+
 ```bash
 # 默认输出：自动生成 输入目录_washed
 python fwt.py process -i D:\Videos
@@ -69,14 +80,31 @@ python fwt.py process -i C:\Videos -o E:\Videos_washed
 |------|:--:|------|
 | `-i, --input` | ✅ | 输入视频目录 |
 | `-o, --output` | | 输出目录（默认：`输入目录_washed`） |
+| `-m, --mode` | | 处理模式：`obfuscate`(默认) 或 `wash` |
 | `--no-preview` | | 不生成预览 ZIP（仅洗码+混淆，速度更快） |
 
-**处理逻辑：**
+**obfuscate 处理逻辑：**
 - 扫描目录下所有视频文件
 - 混淆文件头 → 追加随机字节 → 后缀改为 `.fwt`
 - 生成含截图+GIF的加密预览ZIP
 - 其他文件（种子、压缩包等）按目录结构原样复制
 - 输出到指定目录或自动生成的 `输入目录_washed/`，保持目录结构
+
+**wash 模式（轻量洗码）：**
+
+```bash
+# 洗码全部文件（仅改MD5，不混淆不伪装）
+python fwt.py process -i D:\Videos -m wash
+
+# 仅洗码指定扩展名的文件
+python fwt.py process -i D:\Videos -m wash --ext mp4 mkv avi
+```
+
+| 参数 | 必填 | 说明 |
+|------|:--:|------|
+| `--ext` | | 限定处理的扩展名，如 `mp4 mkv`（不指定=全部文件） |
+
+wash 模式仅复制文件并在末尾追加 5 字节随机数，文件保留原名和原始内容，适合**只需改变 MD5 即可绕过哈希封禁**的简单场景。
 
 ### 2. 预览（preview）
 
@@ -92,11 +120,21 @@ python fwt.py preview -i D:\Videos_washed
 
 ### 3. 还原（restore）
 
+**obfuscate 模式（默认）：**
+
 ```bash
 python fwt.py restore -i D:\Downloads\B
 ```
 
 扫描目录下所有 `.fwt` 文件，原地还原为原始视频（bit-perfect），并删除 `.fwt` 文件。
+
+**wash 模式：**
+
+```bash
+python fwt.py restore -i D:\Videos_washed -m wash
+```
+
+截掉目录中所有文件末尾 5 字节，输出到 `_restored` 子目录（不会修改原始文件）。
 
 ---
 
@@ -201,14 +239,13 @@ python fwt.py restore -i E:\Downloads\B
 
 ---
 
-## 同类项目
-
-本目录下还有两个相关工具：
+## 相关项目
 
 | 项目 | 功能 |
 |------|------|
-| `file_wash_tool/` | 轻量级洗码（仅追加5字节改MD5） |
-| `file_encryptor/` | AES 全量加密（需客户端解密播放） |
+| `file_encryptor/` | AES 全量加密（需客户端解密播放，兼容小白羊网盘） |
+
+> `file_wash_tool` 的轻量洗码功能已整合到本项目的 `wash` 模式中。
 
 ---
 
